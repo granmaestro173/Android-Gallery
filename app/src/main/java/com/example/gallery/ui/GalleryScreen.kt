@@ -2,25 +2,30 @@ package com.example.gallery.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,6 +34,11 @@ import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import com.example.gallery.data.MediaItem
 import com.example.gallery.data.MediaType
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,8 +46,11 @@ fun GalleryScreen(
     state: GalleryUiState,
     onTabSelected: (GalleryTab) -> Unit,
     onQueryChange: (String) -> Unit,
+    onDateFilterChange: (DateFilter) -> Unit,
     onItemClick: (MediaItem) -> Unit,
 ) {
+    var showRangePicker by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = { TopAppBar(title = { Text("Gallery") }) }
     ) { padding ->
@@ -65,6 +78,13 @@ fun GalleryScreen(
                 shape = RoundedCornerShape(24.dp),
             )
 
+            // --- Date categories ---
+            DateFilterRow(
+                selected = state.dateFilter,
+                onSelect = onDateFilterChange,
+                onPickRange = { showRangePicker = true },
+            )
+
             // --- Photos / Videos separation ---
             TabRow(selectedTabIndex = state.tab.ordinal) {
                 Tab(
@@ -81,43 +101,168 @@ fun GalleryScreen(
                 )
             }
 
+            val filtering = state.query.isNotBlank() || state.dateFilter != DateFilter.All
             when {
                 state.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     CircularProgressIndicator()
                 }
-                state.items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                state.sections.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), Alignment.Center) {
                     Text(
-                        if (state.query.isNotBlank()) "No results for \"${state.query}\""
+                        if (filtering) "Nothing matches your search and date filter"
                         else "Nothing here yet",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 else -> {
-                    if (state.query.isNotBlank()) {
+                    if (filtering) {
                         Text(
-                            "${state.items.size} result(s)",
+                            "${state.resultCount} result(s)",
                             Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }
-                    MediaGrid(state.items, showNames = state.query.isNotBlank(), onItemClick)
+                    MediaGrid(state.sections, showNames = state.query.isNotBlank(), onItemClick)
                 }
             }
         }
     }
+
+    if (showRangePicker) {
+        DateRangeDialog(
+            initial = state.dateFilter as? DateFilter.Range,
+            onDismiss = { showRangePicker = false },
+            onConfirm = { range ->
+                onDateFilterChange(range)
+                showRangePicker = false
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateFilterRow(
+    selected: DateFilter,
+    onSelect: (DateFilter) -> Unit,
+    onPickRange: () -> Unit,
+) {
+    val presets = listOf(
+        DateFilter.All to "All dates",
+        DateFilter.Today to "Today",
+        DateFilter.Last7Days to "Last 7 days",
+        DateFilter.ThisMonth to "This month",
+        DateFilter.ThisYear to "This year",
+    )
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        presets.forEach { (filter, label) ->
+            FilterChip(
+                selected = selected == filter,
+                onClick = { onSelect(filter) },
+                label = { Text(label) },
+            )
+        }
+        val range = selected as? DateFilter.Range
+        FilterChip(
+            selected = range != null,
+            onClick = onPickRange,
+            label = { Text(range?.let { rangeLabel(it) } ?: "Pick dates…") },
+            leadingIcon = { Icon(Icons.Default.CalendarMonth, null, Modifier.size(18.dp)) },
+        )
+    }
+}
+
+private val shortDate = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault())
+
+private fun rangeLabel(r: DateFilter.Range): String =
+    if (r.start == r.end) r.start.format(shortDate)
+    else "${r.start.format(shortDate)} – ${r.end.format(shortDate)}"
+
+/** The Material date picker works in UTC midnight millis; convert to/from calendar days. */
+private fun LocalDate.toPickerMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+private fun Long.toLocalDateUtc(): LocalDate = Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateRangeDialog(
+    initial: DateFilter.Range?,
+    onDismiss: () -> Unit,
+    onConfirm: (DateFilter.Range) -> Unit,
+) {
+    val pickerState = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = initial?.start?.toPickerMillis(),
+        initialSelectedEndDateMillis = initial?.end?.toPickerMillis(),
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                enabled = pickerState.selectedStartDateMillis != null,
+                onClick = {
+                    val start = pickerState.selectedStartDateMillis!!.toLocalDateUtc()
+                    // A single tapped day means "just that day".
+                    val end = pickerState.selectedEndDateMillis?.toLocalDateUtc() ?: start
+                    onConfirm(DateFilter.Range(start, end))
+                },
+            ) { Text("Show") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    ) {
+        DateRangePicker(
+            state = pickerState,
+            modifier = Modifier.weight(1f),
+            title = { Text("Choose a day or range", Modifier.padding(start = 24.dp, top = 16.dp)) },
+        )
+    }
 }
 
 @Composable
-private fun MediaGrid(items: List<MediaItem>, showNames: Boolean, onItemClick: (MediaItem) -> Unit) {
+private fun MediaGrid(
+    sections: List<DateSection>,
+    showNames: Boolean,
+    onItemClick: (MediaItem) -> Unit,
+) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(110.dp),
         contentPadding = PaddingValues(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        items(items, key = { "${it.type}-${it.id}" }) { item ->
-            MediaThumb(item, showNames) { onItemClick(item) }
+        sections.forEach { section ->
+            item(key = "header-${section.day}", span = { GridItemSpan(maxLineSpan) }) {
+                DateHeader(section)
+            }
+            items(section.items, key = { "${it.type}-${it.id}" }) { item ->
+                MediaThumb(item, showNames) { onItemClick(item) }
+            }
         }
+    }
+}
+
+@Composable
+private fun DateHeader(section: DateSection) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 10.dp, end = 10.dp, top = 14.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Text(
+            section.label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            "${section.items.size}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

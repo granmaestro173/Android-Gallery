@@ -107,6 +107,7 @@ private fun App(vm: GalleryViewModel = viewModel()) {
             state = state,
             onTabSelected = vm::selectTab,
             onQueryChange = vm::setQuery,
+            onDateFilterChange = vm::setDateFilter,
             onItemClick = { open = it },
         )
     }
