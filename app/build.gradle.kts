@@ -10,10 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "com.example.gallery"
-        minSdk = 26
+        minSdk = 21
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.6.1"
     }
 
     buildTypes {
@@ -22,6 +22,8 @@ android {
         }
     }
     compileOptions {
+        // Lets the date code (java.time) run on Android versions older than 8.0.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -47,6 +49,8 @@ dependencies {
     // Image loading + video thumbnails
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-video:2.7.0")
+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     testImplementation("junit:junit:4.13.2")
 }

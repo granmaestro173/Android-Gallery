@@ -16,7 +16,7 @@ Android gallery app (Kotlin + Jetpack Compose):
 - Small calendar strip under each thumbnail with the day of the week (e.g. "Tue 25")
 - Full-screen viewer with pinch-to-zoom for photos and a built-in video player
 
-Requires Android 8.0 or newer.
+Requires Android 5.0 or newer.
 
 ## Build
 

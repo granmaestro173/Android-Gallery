@@ -36,8 +36,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk Gallery.apk
-          gh release delete latest --cleanup-tag --yes || true
-          gh release create latest Gallery.apk \
-            --title "Gallery (latest build)" \
-            --notes "Debug build from commit ${GITHUB_SHA::7}. Download Gallery.apk and open it on your phone to install." \
-            --target "$GITHUB_SHA"
+          NOTES="Debug build from commit ${GITHUB_SHA::7}. Download Gallery.apk and open it on your phone to install. Needs Android 5.0 or newer."
+          if gh release view latest >/dev/null 2>&1; then
+            # Replace the file in place so the download link keeps working.
+            gh release upload latest Gallery.apk --clobber
+            gh release edit latest --notes "$NOTES"
+          else
+            gh release create latest Gallery.apk --title "Gallery (latest build)" --notes "$NOTES" --target "$GITHUB_SHA"
+          fi
