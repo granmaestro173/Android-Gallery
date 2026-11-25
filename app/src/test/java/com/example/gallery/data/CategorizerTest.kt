@@ -55,6 +55,37 @@ class CategorizerTest {
         assertEquals(c, cat("other.jpg", "Pictures/Pinterest/", "pinterest"))
     }
 
+    @Test fun tikTokOwnSaveButtonInCameraFolder() {
+        assertEquals(Categorizer.TIKTOK, cat("3f2a9c0b1d4e5f60718293a4b5c6d7e8.mp4", "DCIM/Camera/", "Camera"))
+        assertEquals(Categorizer.TIKTOK, cat("3F2A9C0B1D4E5F60718293A4B5C6D7E8_1.mp4", "DCIM/Camera/", "Camera"))
+    }
+
+    @Test fun tikTokDownloadersAndNames() {
+        assertEquals(Categorizer.TIKTOK, cat("ssstik.io_1715500000000.mp4", "Download/"))
+        assertEquals(Categorizer.TIKTOK, cat("SnapTik.App_7301234567890123456.mp4", "Download/"))
+        assertEquals(Categorizer.TIKTOK, cat("@someuser_video_7301234567890123456.mp4", "Movies/"))
+        assertEquals(Categorizer.TIKTOK, cat("7301234567890123456.mp4", "DCIM/Camera/"))
+        assertEquals(Categorizer.TIKTOK, cat("Tik Tok dance.mp4", "Download/"))
+        assertEquals(Categorizer.TIKTOK, cat("musicaldown.com_1715500000.mp4", "Download/"))
+        assertEquals(Categorizer.TIKTOK, cat("video.mp4", "Pictures/TikTok/", "TikTok"))
+    }
+
+    @Test fun otherDownloaders() {
+        assertEquals(Categorizer.INSTAGRAM, cat("SnapInsta.app_123456789.mp4", "Download/"))
+        assertEquals(Categorizer.YOUTUBE, cat("y2mate.com - song_720p.mp4", "Download/"))
+        assertEquals(Categorizer.CAPCUT, cat("CapCut_20240512.mp4", "DCIM/Camera/"))
+        assertEquals(Categorizer.PINTEREST, cat("pinterest_12345.jpg", "Download/"))
+    }
+
+    @Test fun noFalseMatches() {
+        // "diagram" and "instant" must not look like Instagram; camera photos stay Camera.
+        assertEquals(Categorizer.DOWNLOADS, cat("diagram.png", "Download/"))
+        assertEquals(Categorizer.CAMERA, cat("instant.jpg", "DCIM/Camera/"))
+        assertEquals(Categorizer.CAMERA, cat("IMG_20240512_101500.jpg", "DCIM/Camera/"))
+        // Facebook-style long-number names are not TikTok IDs.
+        assertEquals(Categorizer.DOWNLOADS, cat("123456789_7301234567890123456_1234567890_n.jpg", "Download/"))
+    }
+
     @Test fun nothingKnown() {
         assertEquals(Categorizer.OTHER, cat("file.jpg", "", ""))
     }

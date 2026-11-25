@@ -9,42 +9,83 @@ data class Category(val id: String, val label: String, val rank: Int)
 /**
  * Works out where a photo or video came from, using its file name and the folder it is in.
  *
- * Apps leave recognisable marks:
- *  - WhatsApp names files like `IMG-20240512-WA0007.jpg` and saves them under a "WhatsApp" folder
- *  - Screenshots are named `Screenshot_...` and live in a "Screenshots" folder
+ * Apps and downloaders leave recognisable marks:
+ *  - WhatsApp names files like `IMG-20240512-WA0007.jpg`
+ *  - TikTok's own "Save video" puts videos in the Camera folder with a 32-character code as the
+ *    name (e.g. `3f2a9c0b1d4e5f60718293a4b5c6d7e8.mp4`); TikTok downloaders use names like
+ *    `ssstik.io_1715500000000.mp4`, `SnapTik.App_7301234567890123456.mp4` or the 19-digit video ID
+ *  - Screenshots are named `Screenshot_...`, Messenger saves `received_...`, Facebook `FB_IMG_...`
  *  - Phone cameras use `IMG_20240512_101500.jpg`, `PXL_...`, `20240512_101500.jpg` in DCIM/Camera
- *  - Messenger saves `received_123....jpeg`, Facebook `FB_IMG_...`, Snapchat `Snapchat-...`
  *
- * Rules are checked in order and the first match wins. Anything that matches no rule is grouped
- * by its folder name (e.g. "Bluetooth", "Pinterest"), so every app still gets its own category.
+ * The order matters: clues in the file name are checked first, then app folders, and only then
+ * the generic Camera/Downloads folders. That way a TikTok video saved into the Camera folder
+ * still counts as TikTok. Anything that matches no rule is grouped by its folder name
+ * (e.g. "Bluetooth"), so every app still gets its own category.
  */
 object Categorizer {
 
     val CAMERA = Category("camera", "Camera", 0)
     val WHATSAPP = Category("whatsapp", "WhatsApp", 1)
-    val SCREENSHOTS = Category("screenshots", "Screenshots", 2)
-    val SCREEN_RECORDINGS = Category("screen_recordings", "Screen recordings", 3)
-    val TELEGRAM = Category("telegram", "Telegram", 4)
-    val INSTAGRAM = Category("instagram", "Instagram", 5)
-    val FACEBOOK = Category("facebook", "Facebook", 6)
-    val MESSENGER = Category("messenger", "Messenger", 7)
-    val TIKTOK = Category("tiktok", "TikTok", 8)
-    val SNAPCHAT = Category("snapchat", "Snapchat", 9)
-    val TWITTER = Category("twitter", "X / Twitter", 10)
-    val SIGNAL = Category("signal", "Signal", 11)
-    val DOWNLOADS = Category("downloads", "Downloads", 12)
-    val EDITED = Category("edited", "Edited", 13)
+    val TIKTOK = Category("tiktok", "TikTok", 2)
+    val INSTAGRAM = Category("instagram", "Instagram", 3)
+    val FACEBOOK = Category("facebook", "Facebook", 4)
+    val MESSENGER = Category("messenger", "Messenger", 5)
+    val TELEGRAM = Category("telegram", "Telegram", 6)
+    val SNAPCHAT = Category("snapchat", "Snapchat", 7)
+    val YOUTUBE = Category("youtube", "YouTube", 8)
+    val TWITTER = Category("twitter", "X / Twitter", 9)
+    val PINTEREST = Category("pinterest", "Pinterest", 10)
+    val CAPCUT = Category("capcut", "CapCut", 11)
+    val SIGNAL = Category("signal", "Signal", 12)
+    val SCREENSHOTS = Category("screenshots", "Screenshots", 13)
+    val SCREEN_RECORDINGS = Category("screen_recordings", "Screen recordings", 14)
+    val DOWNLOADS = Category("downloads", "Downloads", 15)
+    val EDITED = Category("edited", "Edited", 16)
     val OTHER = Category("other", "Other", 1000)
 
     private const val FOLDER_RANK = 100
 
+    /**
+     * Words that identify an app (or a downloader for it) in a file or folder name.
+     * They're matched after removing spaces, dots, dashes and underscores, so
+     * "Tik Tok", "tik_tok" and "TikTok" all match "tiktok".
+     */
+    private val keywords: List<Pair<Category, List<String>>> = listOf(
+        WHATSAPP to listOf("whatsapp"),
+        TIKTOK to listOf(
+            "tiktok", "musically", "douyin",
+            // popular TikTok downloaders
+            "ssstik", "snaptik", "tikmate", "savetik", "musicaldown", "tikdown",
+            "tiktokio", "lovetik", "ttdown", "tikwm", "tiksave", "ttsave",
+        ),
+        INSTAGRAM to listOf("instagram", "snapinsta", "instasave", "saveinsta", "fastsave", "instadown"),
+        MESSENGER to listOf("messenger"),
+        FACEBOOK to listOf("facebook", "fbdown", "fdownnet", "fbvideo"),
+        TELEGRAM to listOf("telegram"),
+        SNAPCHAT to listOf("snapchat"),
+        YOUTUBE to listOf("youtube", "y2mate", "savefrom", "ssyoutube", "yt5s", "ytdown", "ytmp4"),
+        TWITTER to listOf("twitter", "twdown", "twittervideo", "ssstwitter"),
+        PINTEREST to listOf("pinterest"),
+        CAPCUT to listOf("capcut"),
+        SCREEN_RECORDINGS to listOf("screenrecord", "recordscreen", "grabacion", "grabaciondepantalla"),
+        SCREENSHOTS to listOf("screenshot", "capturadepantalla", "screencapture"),
+    )
+
     private val whatsAppName = Regex("""^(img|vid|aud|ptt|stk|doc)-\d{8}-wa\d+""")
+    /** TikTok's own Save button: a 32-character code, sometimes followed by a number. */
+    private val tikTokCodeName = Regex("""^[0-9a-f]{32}(_\d+)?$""")
+    /** A 19-digit TikTok video ID (they start with 6 or 7), on its own or with a username/prefix. */
+    private val tikTokIdName = Regex("""(^|[^0-9])[67]\d{18}([^0-9]|$)""")
+    /** Facebook/Instagram's own download names also contain long numbers, e.g. "123_4567_890_n". */
+    private val metaCdnName = Regex("""\d+_\d+_\d+_n$""")
     private val cameraName = Regex(
         """^(img|vid|pxl|dsc|dscn|dcim|mvimg|photo|video|cimg|p)[_-]?\d{8}""" + // IMG_20240512..., PXL_2024...
             """|^\d{8}_\d{6}""" +                                                 // Samsung: 20240512_101500.jpg
             """|^dsc_?\d{3,}"""                                                   // DSC_0001.jpg / DSC0001.jpg
     )
-    private val screenRecordingName = Regex("""^(screen[_ -]?record|screenrecord|record[_ -]?screen|screen[_ -]?capture)""")
+    private val screenRecordingName = Regex("""^(screen[_ -]?record|record[_ -]?screen)""")
+
+    private fun squash(s: String) = s.lowercase().replace(Regex("[^a-z0-9]"), "")
 
     /**
      * @param name   file name, e.g. "IMG-20240512-WA0007.jpg"
@@ -53,20 +94,31 @@ object Categorizer {
      */
     fun categorize(name: String, path: String, folder: String): Category {
         val n = name.lowercase()
+        val base = n.substringBeforeLast('.')     // name without ".jpg" / ".mp4"
+        val sn = squash(base)
         val p = path.lowercase().replace('\\', '/')
+        val sp = squash(p) + squash(folder)
 
+        // 1. Clear patterns in the file name.
+        when {
+            whatsAppName.containsMatchIn(n) -> return WHATSAPP
+            screenRecordingName.containsMatchIn(n) -> return SCREEN_RECORDINGS
+            n.startsWith("screenshot") -> return SCREENSHOTS
+            n.startsWith("received_") -> return MESSENGER
+            n.startsWith("fb_img") || n.startsWith("fb_vid") -> return FACEBOOK
+            n.startsWith("snapchat-") -> return SNAPCHAT
+            n.startsWith("signal-") -> return SIGNAL
+        }
+        keywords.firstOrNull { (_, words) -> words.any { squash(it) in sn || it in base } }?.let { return it.first }
+        if (tikTokCodeName.matches(base)) return TIKTOK
+        if (tikTokIdName.containsMatchIn(base) && !metaCdnName.containsMatchIn(base)) return TIKTOK
+
+        // 2. App folders.
+        keywords.firstOrNull { (_, words) -> words.any { squash(it) in sp } }?.let { return it.first }
+        if ("signal" in sp) return SIGNAL
+
+        // 3. Generic folders, then the folder's own name.
         return when {
-            whatsAppName.containsMatchIn(n) || "whatsapp" in p || "com.whatsapp" in p -> WHATSAPP
-            "telegram" in p || "org.telegram" in p -> TELEGRAM
-            screenRecordingName.containsMatchIn(n) || "screenrecord" in p.replace(" ", "") -> SCREEN_RECORDINGS
-            n.startsWith("screenshot") || "screenshot" in p -> SCREENSHOTS
-            "instagram" in p || "instagram" in n -> INSTAGRAM
-            "messenger" in p || n.startsWith("received_") -> MESSENGER
-            "facebook" in p || n.startsWith("fb_img") || n.startsWith("fb_vid") -> FACEBOOK
-            "tiktok" in p || "tiktok" in n || "musically" in p -> TIKTOK
-            "snapchat" in p || n.startsWith("snapchat-") -> SNAPCHAT
-            "twitter" in p || n.startsWith("twitter_") -> TWITTER
-            "signal" in p || n.startsWith("signal-") -> SIGNAL
             "dcim/camera" in p || cameraName.containsMatchIn(n) -> CAMERA
             "edited" in p || n.contains("_edited") || n.contains("-edited") -> EDITED
             "download" in p -> DOWNLOADS
