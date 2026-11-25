@@ -65,10 +65,13 @@ fun ViewerScreen(item: MediaItem, onBack: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(item.name, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    item.category.label,
+                    (if (item.dateIsTaken) "Taken " else "Saved ") +
+                        item.day.format(fullDateFormat).replaceFirstChar { it.uppercase() } +
+                        " · " + item.category.label,
                     color = Color.White.copy(alpha = 0.7f),
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             TextButton(onClick = { Share.toWhatsApp(context, listOf(item)) }) {
@@ -82,6 +85,9 @@ fun ViewerScreen(item: MediaItem, onBack: () -> Unit) {
         }
     }
 }
+
+private val fullDateFormat =
+    java.time.format.DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy", java.util.Locale.getDefault())
 
 @Composable
 private fun ZoomableImage(item: MediaItem) {

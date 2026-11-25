@@ -661,13 +661,16 @@ private fun MediaThumb(
 ) {
     val context = LocalContext.current
     val selectedColor = MaterialTheme.colorScheme.primary
+    Column(
+        Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .then(if (selected) Modifier.border(3.dp, selectedColor, RoundedCornerShape(4.dp)) else Modifier)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    ) {
     Box(
         Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(4.dp))
             .background(Color.DarkGray)
-            .then(if (selected) Modifier.border(3.dp, selectedColor, RoundedCornerShape(4.dp)) else Modifier)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         val request = ImageRequest.Builder(context)
             .data(item.uri)
@@ -724,6 +727,42 @@ private fun MediaThumb(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+
+        // Small calendar strip: day of the week and day of the month, e.g. "Tue 25".
+        WeekdayStrip(item)
+    }
+}
+
+private val weekdayFormat = DateTimeFormatter.ofPattern("EEE d", Locale.getDefault())
+
+@Composable
+private fun WeekdayStrip(item: MediaItem) {
+    val isWeekend = item.day.dayOfWeek == java.time.DayOfWeek.SATURDAY ||
+        item.day.dayOfWeek == java.time.DayOfWeek.SUNDAY
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            Icons.Default.CalendarMonth,
+            contentDescription = null,
+            modifier = Modifier.size(11.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(3.dp))
+        Text(
+            item.day.format(weekdayFormat).replaceFirstChar { it.uppercase() },
+            fontSize = 10.sp,
+            maxLines = 1,
+            // Weekends stand out a little.
+            color = if (isWeekend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = if (isWeekend) FontWeight.SemiBold else FontWeight.Normal,
+        )
     }
 }
 

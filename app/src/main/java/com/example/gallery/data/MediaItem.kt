@@ -15,4 +15,5 @@ data class MediaItem(
     val sizeBytes: Long,
     val durationMs: Long = 0L, // videos only
     val category: Category = Categorizer.OTHER, // where it came from (WhatsApp, Camera, ...)
+    val dateIsTaken: Boolean = true, // true: takenAtMs is when it was taken; false: when it was saved/downloaded
 )

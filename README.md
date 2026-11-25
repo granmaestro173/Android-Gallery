@@ -12,6 +12,7 @@ Android gallery app (Kotlin + Jetpack Compose):
 - Blocks view (folder icon at the top): tiles grouped by source, month or year, each with a preview of its newest items
 - Hide whole categories, separately for photos and videos (eye icon at the top); saved between sessions
 - Share to WhatsApp or any app from the viewer; long-press in the grid to select and share several
+- Small calendar strip under each thumbnail with the day of the week (e.g. "Tue 25")
 - Full-screen viewer with pinch-to-zoom for photos and a built-in video player
 
 Requires Android 8.0 or newer.

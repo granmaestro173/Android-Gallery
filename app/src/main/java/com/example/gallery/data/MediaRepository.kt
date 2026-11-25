@@ -79,6 +79,7 @@ class MediaRepository(private val context: Context) {
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
                 val takenAt = takenAtMs(c, takenCol, addedCol)
+                val hasTakenDate = !c.isNull(takenCol) && c.getLong(takenCol) > 0
                 val name = c.getString(nameCol) ?: ""
                 items += MediaItem(
                     id = id,
@@ -86,6 +87,7 @@ class MediaRepository(private val context: Context) {
                     name = name,
                     type = type,
                     takenAtMs = takenAt,
+                    dateIsTaken = hasTakenDate,
                     day = Instant.ofEpochMilli(takenAt).atZone(zone).toLocalDate(),
                     sizeBytes = c.getLong(sizeCol),
                     durationMs = durCol?.let { c.getLong(it) } ?: 0L,
