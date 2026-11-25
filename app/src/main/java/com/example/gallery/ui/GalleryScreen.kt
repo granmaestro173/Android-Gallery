@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -18,7 +19,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SelectAll
@@ -35,6 +39,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -68,12 +73,21 @@ fun GalleryScreen(
     onClearSelection: () -> Unit,
     onSetHidden: (Category, MediaType, Boolean) -> Unit,
     onShowAllCategories: () -> Unit,
+    onBlocksViewChange: (Boolean) -> Unit,
+    onBlockGroupingChange: (BlockGrouping) -> Unit,
+    onOpenBlock: (String) -> Unit,
+    onCloseBlock: () -> Unit,
 ) {
     var showRangePicker by remember { mutableStateOf(false) }
     var showHideDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    // Back button leaves selection mode first.
+    // Blocks view: either the tiles themselves, or one tile opened.
+    val insideBlock = state.blocksView && state.openBlockId != null
+    val showingBlocks = state.blocksView && !insideBlock
+
+    // Back leaves an opened tile, and leaves selection mode first (declared last, so it wins).
+    BackHandler(enabled = insideBlock && !state.selecting, onBack = onCloseBlock)
     BackHandler(enabled = state.selecting, onBack = onClearSelection)
 
     Scaffold(
@@ -99,8 +113,26 @@ fun GalleryScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Gallery") },
+                    navigationIcon = {
+                        if (insideBlock) {
+                            IconButton(onClick = onCloseBlock) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to blocks")
+                            }
+                        }
+                    },
+                    title = {
+                        Text(
+                            if (insideBlock) "${state.openBlockLabel ?: ""} · ${state.resultCount}"
+                            else "Gallery",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
                     actions = {
+                        IconButton(onClick = { onBlocksViewChange(!state.blocksView) }) {
+                            if (state.blocksView) Icon(Icons.Default.GridView, "Show all items")
+                            else Icon(Icons.Default.Folder, "Show category blocks")
+                        }
                         IconButton(onClick = { showHideDialog = true }) {
                             Icon(Icons.Default.VisibilityOff, "Hide categories")
                         }
@@ -156,13 +188,35 @@ fun GalleryScreen(
                 )
             }
 
-            // --- Categories: where the photos/videos came from ---
-            CategoryRow(
-                categories = state.categories,
-                selectedId = state.selectedCategoryId,
-                total = if (state.tab == GalleryTab.PHOTOS) state.photoCount else state.videoCount,
-                onSelect = onCategoryChange,
-            )
+            // --- Categories: where the photos/videos came from (blocks view has its own tiles) ---
+            if (!state.blocksView) {
+                CategoryRow(
+                    categories = state.categories,
+                    selectedId = state.selectedCategoryId,
+                    total = if (state.tab == GalleryTab.PHOTOS) state.photoCount else state.videoCount,
+                    onSelect = onCategoryChange,
+                )
+            }
+
+            // --- In the blocks view: choose what the tiles are grouped by ---
+            if (showingBlocks) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Group by", style = MaterialTheme.typography.labelLarge)
+                    BlockGrouping.entries.forEach { g ->
+                        FilterChip(
+                            selected = state.blockGrouping == g,
+                            onClick = { onBlockGroupingChange(g) },
+                            label = { Text(g.label) },
+                        )
+                    }
+                }
+            }
 
             // Reminder that some categories are hidden, with a shortcut to change it.
             if (state.hiddenInTab > 0) {
@@ -195,6 +249,16 @@ fun GalleryScreen(
                 state.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     CircularProgressIndicator()
                 }
+                showingBlocks -> if (state.blocks.isEmpty()) {
+                    Box(Modifier.fillMaxSize().padding(24.dp), Alignment.Center) {
+                        Text(
+                            "Nothing matches your search and filters",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    BlocksGrid(state.blocks, isVideos = state.tab == GalleryTab.VIDEOS, onOpen = onOpenBlock)
+                }
                 state.sections.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), Alignment.Center) {
                     Text(
                         if (filtering) "Nothing matches your search and filters"
@@ -203,7 +267,7 @@ fun GalleryScreen(
                     )
                 }
                 else -> {
-                    if (filtering) {
+                    if (filtering && !insideBlock) {
                         Text(
                             "${state.resultCount} result(s)",
                             Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
@@ -241,6 +305,104 @@ fun GalleryScreen(
             },
         )
     }
+}
+
+/** Tiles ("cubes"): one square per source, month or year with a preview of its newest items. */
+@Composable
+private fun BlocksGrid(blocks: List<Block>, isVideos: Boolean, onOpen: (String) -> Unit) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(150.dp),
+        contentPadding = PaddingValues(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(blocks, key = { it.id }) { block ->
+            BlockTile(block, isVideos) { onOpen(block.id) }
+        }
+    }
+}
+
+@Composable
+private fun BlockTile(block: Block, isVideos: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.DarkGray)
+            .clickable(onClick = onClick)
+    ) {
+        // Cover: a 2x2 mosaic when there are 4+ items, otherwise the newest one.
+        if (block.covers.size >= 4) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                for (row in 0..1) {
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                        for (col in 0..1) {
+                            CoverImage(block.covers[row * 2 + col], Modifier.weight(1f).fillMaxHeight())
+                        }
+                    }
+                }
+            }
+        } else {
+            block.covers.firstOrNull()?.let { CoverImage(it, Modifier.fillMaxSize()) }
+        }
+
+        // Name and count on a dark fade so they're readable over any picture.
+        Column(
+            Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))))
+                .padding(start = 10.dp, end = 10.dp, top = 24.dp, bottom = 8.dp)
+        ) {
+            Text(
+                block.label,
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${block.count} " + when {
+                    isVideos -> if (block.count == 1) "video" else "videos"
+                    else -> if (block.count == 1) "photo" else "photos"
+                },
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 12.sp,
+            )
+        }
+
+        if (isVideos) {
+            Icon(
+                Icons.Default.PlayArrow, null,
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    .size(22.dp),
+            )
+        }
+    }
+}
+
+/** Thumbnail for a photo, or a frame from a video. */
+@Composable
+private fun CoverImage(item: MediaItem, modifier: Modifier) {
+    val context = LocalContext.current
+    val request = remember(item.uri) {
+        ImageRequest.Builder(context)
+            .data(item.uri)
+            .crossfade(true)
+            .size(300)
+            .apply { if (item.type == MediaType.VIDEO) decoderFactory(VideoFrameDecoder.Factory()) }
+            .build()
+    }
+    AsyncImage(
+        model = request,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier,
+    )
 }
 
 /**

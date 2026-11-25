@@ -9,6 +9,7 @@ Android gallery app (Kotlin + Jetpack Compose):
 - Automatic categories by source (WhatsApp, Camera, Screenshots, Screen recordings, Telegram,
   Instagram, Facebook, Messenger, TikTok, Snapchat, X, Signal, Downloads, Edited, plus any other
   app's folder), worked out from file names and folders — see `data/Categorizer.kt`
+- Blocks view (folder icon at the top): tiles grouped by source, month or year, each with a preview of its newest items
 - Hide whole categories, separately for photos and videos (eye icon at the top); saved between sessions
 - Share to WhatsApp or any app from the viewer; long-press in the grid to select and share several
 - Full-screen viewer with pinch-to-zoom for photos and a built-in video player

@@ -116,6 +116,10 @@ private fun App(vm: GalleryViewModel = viewModel()) {
             onClearSelection = vm::clearSelection,
             onSetHidden = vm::setHidden,
             onShowAllCategories = vm::showAllCategories,
+            onBlocksViewChange = vm::setBlocksView,
+            onBlockGroupingChange = vm::setBlockGrouping,
+            onOpenBlock = vm::openBlock,
+            onCloseBlock = vm::closeBlock,
         )
     }
 }
