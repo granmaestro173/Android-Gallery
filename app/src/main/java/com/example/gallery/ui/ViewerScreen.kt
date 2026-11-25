@@ -8,6 +8,8 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -23,10 +26,11 @@ import coil.compose.AsyncImage
 import com.example.gallery.data.MediaItem
 import com.example.gallery.data.MediaType
 
-/** Full-screen viewer: pinch-to-zoom for photos, built-in player for videos. */
+/** Full-screen viewer: pinch-to-zoom for photos, built-in player for videos, share buttons on top. */
 @Composable
 fun ViewerScreen(item: MediaItem, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
+    val context = LocalContext.current
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         when (item.type) {
@@ -58,7 +62,23 @@ fun ViewerScreen(item: MediaItem, onBack: () -> Unit) {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
             }
-            Text(item.name, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.weight(1f)) {
+                Text(item.name, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    item.category.label,
+                    color = Color.White.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                )
+            }
+            TextButton(onClick = { Share.toWhatsApp(context, listOf(item)) }) {
+                Icon(Icons.AutoMirrored.Filled.Chat, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("WhatsApp", color = Color.White)
+            }
+            IconButton(onClick = { Share.toAnyApp(context, listOf(item)) }) {
+                Icon(Icons.Default.Share, "Share to other apps", tint = Color.White)
+            }
         }
     }
 }

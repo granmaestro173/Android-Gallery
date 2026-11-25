@@ -59,6 +59,8 @@ class MediaRepository(private val context: Context) {
             MediaStore.MediaColumns.SIZE,
             dateTakenColumn,
             durationColumn,
+            BUCKET_COLUMN,
+            PATH_COLUMN,
         ).toTypedArray()
 
         val zone = ZoneId.systemDefault()
@@ -71,24 +73,43 @@ class MediaRepository(private val context: Context) {
             val sizeCol = c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
             val takenCol = c.getColumnIndexOrThrow(dateTakenColumn)
             val durCol = durationColumn?.let { c.getColumnIndexOrThrow(it) }
+            val bucketCol = c.getColumnIndexOrThrow(BUCKET_COLUMN)
+            val pathCol = c.getColumnIndexOrThrow(PATH_COLUMN)
 
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
                 val takenAt = takenAtMs(c, takenCol, addedCol)
+                val name = c.getString(nameCol) ?: ""
                 items += MediaItem(
                     id = id,
                     uri = ContentUris.withAppendedId(collection, id),
-                    name = c.getString(nameCol) ?: "",
+                    name = name,
                     type = type,
                     takenAtMs = takenAt,
                     day = Instant.ofEpochMilli(takenAt).atZone(zone).toLocalDate(),
                     sizeBytes = c.getLong(sizeCol),
                     durationMs = durCol?.let { c.getLong(it) } ?: 0L,
+                    category = Categorizer.categorize(
+                        name = name,
+                        path = c.getString(pathCol) ?: "",
+                        folder = c.getString(bucketCol) ?: "",
+                    ),
                 )
             }
         }
         items.sortByDescending { it.takenAtMs }
         return items
+    }
+
+    private companion object {
+        /** Display name of the folder the file is in, e.g. "WhatsApp Images" (same column for photos and videos). */
+        const val BUCKET_COLUMN = MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME
+
+        /** Folder path: RELATIVE_PATH on Android 10+, full file path on older versions. */
+        @Suppress("DEPRECATION")
+        val PATH_COLUMN: String =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) MediaStore.MediaColumns.RELATIVE_PATH
+            else MediaStore.MediaColumns.DATA
     }
 
     /** DATE_TAKEN is in milliseconds but can be missing; DATE_ADDED is in seconds. */

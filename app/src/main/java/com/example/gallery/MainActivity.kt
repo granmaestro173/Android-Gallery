@@ -108,7 +108,12 @@ private fun App(vm: GalleryViewModel = viewModel()) {
             onTabSelected = vm::selectTab,
             onQueryChange = vm::setQuery,
             onDateFilterChange = vm::setDateFilter,
-            onItemClick = { open = it },
+            onCategoryChange = vm::setCategory,
+            // In selection mode a tap adds/removes the item; otherwise it opens it.
+            onItemClick = { if (state.selecting) vm.toggleSelected(it) else open = it },
+            onItemLongClick = vm::toggleSelected,
+            onSelectAll = vm::selectAll,
+            onClearSelection = vm::clearSelection,
         )
     }
 }

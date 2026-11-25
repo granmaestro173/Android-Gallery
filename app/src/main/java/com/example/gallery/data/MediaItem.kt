@@ -14,4 +14,5 @@ data class MediaItem(
     val day: LocalDate,        // takenAtMs as a calendar day in the phone's time zone
     val sizeBytes: Long,
     val durationMs: Long = 0L, // videos only
+    val category: Category = Categorizer.OTHER, // where it came from (WhatsApp, Camera, ...)
 )
