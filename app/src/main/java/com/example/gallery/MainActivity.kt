@@ -120,6 +120,7 @@ private fun App(vm: GalleryViewModel = viewModel()) {
             onBlockGroupingChange = vm::setBlockGrouping,
             onOpenBlock = vm::openBlock,
             onCloseBlock = vm::closeBlock,
+            onInsideOrderChange = vm::setInsideOrder,
         )
     }
 }

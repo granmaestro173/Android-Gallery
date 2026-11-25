@@ -77,6 +77,7 @@ fun GalleryScreen(
     onBlockGroupingChange: (BlockGrouping) -> Unit,
     onOpenBlock: (String) -> Unit,
     onCloseBlock: () -> Unit,
+    onInsideOrderChange: (InsideOrder) -> Unit,
 ) {
     var showRangePicker by remember { mutableStateOf(false) }
     var showHideDialog by remember { mutableStateOf(false) }
@@ -196,6 +197,27 @@ fun GalleryScreen(
                     total = if (state.tab == GalleryTab.PHOTOS) state.photoCount else state.videoCount,
                     onSelect = onCategoryChange,
                 )
+            }
+
+            // --- Inside an opened block: organize by date or by day of the week ---
+            if (insideBlock) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Organize by", style = MaterialTheme.typography.labelLarge)
+                    InsideOrder.entries.forEach { o ->
+                        FilterChip(
+                            selected = state.insideOrder == o,
+                            onClick = { onInsideOrderChange(o) },
+                            label = { Text(o.label) },
+                        )
+                    }
+                }
             }
 
             // --- In the blocks view: choose what the tiles are grouped by ---
@@ -612,7 +634,7 @@ private fun MediaGrid(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         sections.forEach { section ->
-            item(key = "header-${section.day}", span = { GridItemSpan(maxLineSpan) }) {
+            item(key = "header-${section.key}", span = { GridItemSpan(maxLineSpan) }) {
                 DateHeader(section)
             }
             items(section.items, key = { it.key }) { item ->

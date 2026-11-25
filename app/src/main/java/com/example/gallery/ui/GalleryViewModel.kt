@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.format.TextStyle
+import java.time.temporal.WeekFields
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -42,8 +44,11 @@ sealed interface DateFilter {
     }
 }
 
-/** One date heading in the grid and the photos/videos taken that day. */
-data class DateSection(val day: LocalDate, val label: String, val items: List<MediaItem>)
+/** One heading in the grid (a date, or a day of the week) and the items under it. */
+data class DateSection(val key: String, val label: String, val items: List<MediaItem>)
+
+/** How items are organized inside an opened block. */
+enum class InsideOrder(val label: String) { DATE("Date"), WEEKDAY("Day of the week") }
 
 /** A category button: the category and how many items in the current tab belong to it. */
 data class CategoryCount(val category: Category, val count: Int)
@@ -62,6 +67,7 @@ private data class Filters(
     val blocksView: Boolean = false,     // show tiles instead of the item grid
     val grouping: BlockGrouping = BlockGrouping.SOURCE,
     val openBlockId: String? = null,     // a tile the user opened
+    val insideOrder: InsideOrder = InsideOrder.DATE,
 )
 
 /**
@@ -96,6 +102,7 @@ data class GalleryUiState(
     val blocks: List<Block> = emptyList(),
     val openBlockId: String? = null,
     val openBlockLabel: String? = null,
+    val insideOrder: InsideOrder = InsideOrder.DATE,
     val allCategories: List<CategoryVisibility> = emptyList(), // for the "Hide categories" screen
     val loading: Boolean = true,
 ) {
@@ -116,6 +123,8 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             blocksView = prefs.getBoolean("blocks_view", false),
             grouping = runCatching { BlockGrouping.valueOf(prefs.getString("block_grouping", "")!!) }
                 .getOrDefault(BlockGrouping.SOURCE),
+            insideOrder = runCatching { InsideOrder.valueOf(prefs.getString("inside_order", "")!!) }
+                .getOrDefault(InsideOrder.DATE),
         )
     )
     private val loading = MutableStateFlow(true)
@@ -148,7 +157,8 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
                 categories = countCategories(source),
                 selectedCategoryId = f.categoryId,
                 selectedKeys = sel,
-                sections = groupByDay(matching, today),
+                sections = if (inBlock && f.insideOrder == InsideOrder.WEEKDAY) groupByWeekday(matching)
+                else groupByDay(matching, today),
                 resultCount = matching.size,
                 photoCount = p.size,
                 videoCount = v.size,
@@ -157,6 +167,7 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
                 blockGrouping = f.grouping,
                 blocks = blocks,
                 openBlockId = if (inBlock) f.openBlockId else null,
+                insideOrder = f.insideOrder,
                 openBlockLabel = if (inBlock) blocks.firstOrNull { it.id == f.openBlockId }?.label else null,
                 allCategories = categoryVisibility(allPhotos, allVideos, h),
                 loading = l,
@@ -192,6 +203,12 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     fun setBlockGrouping(g: BlockGrouping) {
         filters.update { it.copy(grouping = g, openBlockId = null) }
         prefs.edit().putString("block_grouping", g.name).apply()
+    }
+
+    /** Inside a block: organize by date or by day of the week; remembered between sessions. */
+    fun setInsideOrder(o: InsideOrder) {
+        filters.update { it.copy(insideOrder = o) }
+        prefs.edit().putString("inside_order", o.name).apply()
     }
 
     /** Tapping a tile opens it; back returns to the tiles. */
@@ -301,14 +318,31 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         var bucket = mutableListOf<MediaItem>()
         for (item in items) {
             if (item.day != currentDay) {
-                currentDay?.let { sections += DateSection(it, dayLabel(it, today), bucket) }
+                currentDay?.let { sections += DateSection(it.toString(), dayLabel(it, today), bucket) }
                 currentDay = item.day
                 bucket = mutableListOf()
             }
             bucket += item
         }
-        currentDay?.let { sections += DateSection(it, dayLabel(it, today), bucket) }
+        currentDay?.let { sections += DateSection(it.toString(), dayLabel(it, today), bucket) }
         return sections
+    }
+
+    /**
+     * Groups by day of the week (e.g. all Mondays together), starting from the first day of the
+     * week used in the phone's language/region. Newest first within each day.
+     */
+    private fun groupByWeekday(items: List<MediaItem>): List<DateSection> {
+        val firstDay = WeekFields.of(Locale.getDefault()).firstDayOfWeek
+        val byWeekday = items.groupBy { it.day.dayOfWeek }
+        return (0L until 7L).mapNotNull { offset ->
+            val dow = firstDay.plus(offset)
+            byWeekday[dow]?.let { list ->
+                val name = dow.getDisplayName(TextStyle.FULL, Locale.getDefault())
+                    .replaceFirstChar { it.uppercase() }
+                DateSection("weekday-$dow", name, list)
+            }
+        }
     }
 
     private val sameYearFormat = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault())
