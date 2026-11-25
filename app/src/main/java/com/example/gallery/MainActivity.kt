@@ -114,6 +114,8 @@ private fun App(vm: GalleryViewModel = viewModel()) {
             onItemLongClick = vm::toggleSelected,
             onSelectAll = vm::selectAll,
             onClearSelection = vm::clearSelection,
+            onSetHidden = vm::setHidden,
+            onShowAllCategories = vm::showAllCategories,
         )
     }
 }

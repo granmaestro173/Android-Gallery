@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +23,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PlayArrow
@@ -42,6 +46,7 @@ import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import com.example.gallery.data.MediaItem
+import com.example.gallery.data.Category
 import com.example.gallery.data.MediaType
 import java.time.Instant
 import java.time.LocalDate
@@ -61,8 +66,11 @@ fun GalleryScreen(
     onItemLongClick: (MediaItem) -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
+    onSetHidden: (Category, MediaType, Boolean) -> Unit,
+    onShowAllCategories: () -> Unit,
 ) {
     var showRangePicker by remember { mutableStateOf(false) }
+    var showHideDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     // Back button leaves selection mode first.
@@ -90,7 +98,14 @@ fun GalleryScreen(
                     ),
                 )
             } else {
-                TopAppBar(title = { Text("Gallery") })
+                TopAppBar(
+                    title = { Text("Gallery") },
+                    actions = {
+                        IconButton(onClick = { showHideDialog = true }) {
+                            Icon(Icons.Default.VisibilityOff, "Hide categories")
+                        }
+                    },
+                )
             }
         }
     ) { padding ->
@@ -149,6 +164,30 @@ fun GalleryScreen(
                 onSelect = onCategoryChange,
             )
 
+            // Reminder that some categories are hidden, with a shortcut to change it.
+            if (state.hiddenInTab > 0) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.VisibilityOff, null,
+                        Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "${state.hiddenInTab} hidden by your category settings",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { showHideDialog = true }) { Text("Change") }
+                }
+            }
+
             val filtering = state.query.isNotBlank() ||
                 state.dateFilter != DateFilter.All ||
                 state.selectedCategoryId != null
@@ -183,6 +222,15 @@ fun GalleryScreen(
         }
     }
 
+    if (showHideDialog) {
+        HideCategoriesDialog(
+            rows = state.allCategories,
+            onSetHidden = onSetHidden,
+            onShowAll = onShowAllCategories,
+            onDismiss = { showHideDialog = false },
+        )
+    }
+
     if (showRangePicker) {
         DateRangeDialog(
             initial = state.dateFilter as? DateFilter.Range,
@@ -193,6 +241,84 @@ fun GalleryScreen(
             },
         )
     }
+}
+
+/**
+ * Lets the user hide whole categories from the gallery, separately for photos and videos.
+ * A highlighted button means "shown"; tap it to hide that part of the category.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HideCategoriesDialog(
+    rows: List<CategoryVisibility>,
+    onSetHidden: (Category, MediaType, Boolean) -> Unit,
+    onShowAll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Show or hide categories") },
+        text = {
+            Column {
+                Text(
+                    "Tap Photos or Videos to hide them from the gallery. " +
+                        "Nothing is deleted — hidden items stay on your phone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                if (rows.isEmpty()) {
+                    Text("No categories yet.")
+                }
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    listItems(rows, key = { it.category.id }) { row ->
+                        Column(Modifier.padding(vertical = 6.dp)) {
+                            Text(row.category.label, style = MaterialTheme.typography.titleSmall)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (row.photoCount > 0) {
+                                    VisibilityChip(
+                                        label = "Photos · ${row.photoCount}",
+                                        shown = !row.photosHidden,
+                                        onClick = { onSetHidden(row.category, MediaType.PHOTO, !row.photosHidden) },
+                                    )
+                                }
+                                if (row.videoCount > 0) {
+                                    VisibilityChip(
+                                        label = "Videos · ${row.videoCount}",
+                                        shown = !row.videosHidden,
+                                        onClick = { onSetHidden(row.category, MediaType.VIDEO, !row.videosHidden) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        dismissButton = {
+            if (rows.any { it.photosHidden || it.videosHidden }) {
+                TextButton(onClick = onShowAll) { Text("Show all") }
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VisibilityChip(label: String, shown: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = shown,
+        onClick = onClick,
+        label = { Text(if (shown) label else "$label (hidden)") },
+        leadingIcon = {
+            Icon(
+                if (shown) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                contentDescription = if (shown) "Shown" else "Hidden",
+                modifier = Modifier.size(18.dp),
+            )
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

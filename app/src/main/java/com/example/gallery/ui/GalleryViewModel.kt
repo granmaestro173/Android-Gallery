@@ -4,8 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.gallery.data.Category
+import com.example.gallery.data.HiddenCategories
 import com.example.gallery.data.MediaItem
 import com.example.gallery.data.MediaRepository
+import com.example.gallery.data.MediaType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +54,18 @@ private data class Filters(
     val categoryId: String? = null, // null = all categories
 )
 
+/**
+ * One row of the "Hide categories" screen: a category, how many photos and videos it has,
+ * and whether each is currently hidden.
+ */
+data class CategoryVisibility(
+    val category: Category,
+    val photoCount: Int,
+    val videoCount: Int,
+    val photosHidden: Boolean,
+    val videosHidden: Boolean,
+)
+
 /** Stable key for an item, used for selection and grid keys. */
 val MediaItem.key: String get() = "${type}-${id}"
 
@@ -66,6 +80,8 @@ data class GalleryUiState(
     val resultCount: Int = 0,
     val photoCount: Int = 0,
     val videoCount: Int = 0,
+    val hiddenInTab: Int = 0,                                  // items hidden in the current tab
+    val allCategories: List<CategoryVisibility> = emptyList(), // for the "Hide categories" screen
     val loading: Boolean = true,
 ) {
     val selecting: Boolean get() = selectedKeys.isNotEmpty()
@@ -83,10 +99,18 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     private val loading = MutableStateFlow(true)
     private val selection = MutableStateFlow<Set<String>>(emptySet())
 
+    private val hiddenStore = HiddenCategories(app)
+    private val hidden = MutableStateFlow(hiddenStore.load())
+    private val filtersAndHidden = combine(filters, hidden) { f, h -> f to h }
+
     val state: StateFlow<GalleryUiState> =
-        combine(photos, videos, filters, loading, selection) { p, v, f, l, sel ->
+        combine(photos, videos, filtersAndHidden, loading, selection) { allPhotos, allVideos, (f, h), l, sel ->
             val today = LocalDate.now()
+            // Hidden categories are removed before anything else, so they never show up.
+            val p = allPhotos.filter { HiddenCategories.keyOf(MediaType.PHOTO, it.category.id) !in h }
+            val v = allVideos.filter { HiddenCategories.keyOf(MediaType.VIDEO, it.category.id) !in h }
             val source = if (f.tab == GalleryTab.PHOTOS) p else v
+            val hiddenInTab = if (f.tab == GalleryTab.PHOTOS) allPhotos.size - p.size else allVideos.size - v.size
             val matching = filterByName(source, f.query)
                 .filter { f.date.matches(it.day, today) }
                 .filter { f.categoryId == null || it.category.id == f.categoryId }
@@ -101,6 +125,8 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
                 resultCount = matching.size,
                 photoCount = p.size,
                 videoCount = v.size,
+                hiddenInTab = hiddenInTab,
+                allCategories = categoryVisibility(allPhotos, allVideos, h),
                 loading = l,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GalleryUiState())
@@ -123,6 +149,22 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     fun setDateFilter(d: DateFilter) = filters.update { it.copy(date = d) }
     fun setCategory(id: String?) = filters.update { it.copy(categoryId = id) }
 
+    /** Show or hide one category for photos or videos. */
+    fun setHidden(category: Category, type: MediaType, hide: Boolean) {
+        val key = HiddenCategories.keyOf(type, category.id)
+        hidden.update { if (hide) it + key else it - key }
+        hiddenStore.save(hidden.value)
+        // Don't leave the screen filtered to a category that just disappeared.
+        val tabType = if (filters.value.tab == GalleryTab.PHOTOS) MediaType.PHOTO else MediaType.VIDEO
+        if (hide && type == tabType && filters.value.categoryId == category.id) setCategory(null)
+        selection.value = emptySet()
+    }
+
+    fun showAllCategories() {
+        hidden.value = emptySet()
+        hiddenStore.save(emptySet())
+    }
+
     fun toggleSelected(item: MediaItem) = selection.update { s ->
         if (item.key in s) s - item.key else s + item.key
     }
@@ -134,6 +176,28 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         items.groupingBy { it.category }.eachCount()
             .map { (c, n) -> CategoryCount(c, n) }
             .sortedWith(compareBy<CategoryCount> { it.category.rank }.thenByDescending { it.count })
+
+    /** Every category found on the phone (photos and videos), for the "Hide categories" screen. */
+    private fun categoryVisibility(
+        photos: List<MediaItem>,
+        videos: List<MediaItem>,
+        hidden: Set<String>,
+    ): List<CategoryVisibility> {
+        val photoCounts = photos.groupingBy { it.category }.eachCount()
+        val videoCounts = videos.groupingBy { it.category }.eachCount()
+        return (photoCounts.keys + videoCounts.keys)
+            .map { c ->
+                CategoryVisibility(
+                    category = c,
+                    photoCount = photoCounts[c] ?: 0,
+                    videoCount = videoCounts[c] ?: 0,
+                    photosHidden = HiddenCategories.keyOf(MediaType.PHOTO, c.id) in hidden,
+                    videosHidden = HiddenCategories.keyOf(MediaType.VIDEO, c.id) in hidden,
+                )
+            }
+            .sortedWith(compareBy<CategoryVisibility> { it.category.rank }
+                .thenByDescending { it.photoCount + it.videoCount })
+    }
 
     /**
      * Name search: case-insensitive, matches every word typed in any order.
