@@ -25,6 +25,14 @@ jobs:
       - name: Test categorizer and build debug APK
         run: gradle testDebugUnitTest assembleDebug --stacktrace
 
+      - name: Check the APK with Android's own tools
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$BT"/apksigner verify --verbose --min-sdk-version 21 "$APK"
+          "$BT"/aapt2 dump badging "$APK" | head -5
+          "$BT"/zipalign -c -P 16 -v 4 "$APK" | tail -1
+
       - uses: actions/upload-artifact@v4
         with:
           name: gallery-debug-apk
