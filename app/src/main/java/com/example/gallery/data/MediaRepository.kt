@@ -95,6 +95,7 @@ class MediaRepository(private val context: Context) {
                         name = name,
                         path = c.getString(pathCol) ?: "",
                         folder = c.getString(bucketCol) ?: "",
+                        isVideo = type == MediaType.VIDEO,
                     ),
                 )
             }

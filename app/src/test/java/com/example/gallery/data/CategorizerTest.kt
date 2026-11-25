@@ -5,8 +5,8 @@ import org.junit.Test
 
 class CategorizerTest {
 
-    private fun cat(name: String, path: String = "", folder: String = "") =
-        Categorizer.categorize(name, path, folder)
+    private fun cat(name: String, path: String = "", folder: String = "", isVideo: Boolean? = null) =
+        Categorizer.categorize(name, path, folder, isVideo)
 
     @Test fun whatsAppByName() {
         assertEquals(Categorizer.WHATSAPP, cat("IMG-20240512-WA0007.jpg", "Pictures/"))
@@ -84,6 +84,25 @@ class CategorizerTest {
         assertEquals(Categorizer.CAMERA, cat("IMG_20240512_101500.jpg", "DCIM/Camera/"))
         // Facebook-style long-number names are not TikTok IDs.
         assertEquals(Categorizer.DOWNLOADS, cat("123456789_7301234567890123456_1234567890_n.jpg", "Download/"))
+    }
+
+    @Test fun screenRecordingsNeverMixWithScreenshotsOrApps() {
+        // Samsung adds the app's name: still a recording / screenshot, not TikTok.
+        assertEquals(Categorizer.SCREEN_RECORDINGS, cat("Screen_Recording_20240512-101500_TikTok.mp4", "DCIM/Screen recordings/"))
+        assertEquals(Categorizer.SCREENSHOTS, cat("Screenshot_20240512-101500_TikTok.jpg", "DCIM/Screenshots/"))
+        // Pixel, Xiaomi, Motorola, Huawei.
+        assertEquals(Categorizer.SCREEN_RECORDINGS, cat("Screen_recording_20240512_101500.mp4", "Movies/"))
+        assertEquals(Categorizer.SCREEN_RECORDINGS, cat("Screenrecorder-2024-05-12-10-15-00-123.mp4", "DCIM/ScreenRecorder/"))
+        assertEquals(Categorizer.SCREEN_RECORDINGS, cat("screen-20240512-101500.mp4", "Movies/"))
+        assertEquals(Categorizer.SCREEN_RECORDINGS, cat("SVID_20240512_101500_1.mp4", "Pictures/Screenshots/", "Screenshots"))
+        // Oppo/Realme/Vivo: any video in the Screenshots folder is a recording...
+        assertEquals(Categorizer.SCREEN_RECORDINGS, cat("Record_2024-05-12-10-15-00.mp4", "DCIM/Screenshots/", "Screenshots"))
+        assertEquals(Categorizer.SCREEN_RECORDINGS, cat("anything", "DCIM/Screenshots/", "Screenshots", isVideo = true))
+        // ...while pictures there stay screenshots.
+        assertEquals(Categorizer.SCREENSHOTS, cat("anything.jpg", "DCIM/Screenshots/", "Screenshots"))
+        // Spanish names.
+        assertEquals(Categorizer.SCREEN_RECORDINGS, cat("Grabación de pantalla 2024-05-12.mp4", "Movies/"))
+        assertEquals(Categorizer.SCREENSHOTS, cat("Captura de pantalla 2024-05-12.png", "Pictures/"))
     }
 
     @Test fun nothingKnown() {

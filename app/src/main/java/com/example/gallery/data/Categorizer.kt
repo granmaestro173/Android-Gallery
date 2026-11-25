@@ -67,8 +67,6 @@ object Categorizer {
         TWITTER to listOf("twitter", "twdown", "twittervideo", "ssstwitter"),
         PINTEREST to listOf("pinterest"),
         CAPCUT to listOf("capcut"),
-        SCREEN_RECORDINGS to listOf("screenrecord", "recordscreen", "grabacion", "grabaciondepantalla"),
-        SCREENSHOTS to listOf("screenshot", "capturadepantalla", "screencapture"),
     )
 
     private val whatsAppName = Regex("""^(img|vid|aud|ptt|stk|doc)-\d{8}-wa\d+""")
@@ -83,27 +81,50 @@ object Categorizer {
             """|^\d{8}_\d{6}""" +                                                 // Samsung: 20240512_101500.jpg
             """|^dsc_?\d{3,}"""                                                   // DSC_0001.jpg / DSC0001.jpg
     )
-    private val screenRecordingName = Regex("""^(screen[_ -]?record|record[_ -]?screen)""")
+    /**
+     * Screen recordings: Pixel/Samsung "Screen_recording_...", Xiaomi "Screenrecorder-...",
+     * Motorola "screen-20240512-101500", Huawei "SVID_...", others "Record_screen_...".
+     */
+    private val screenRecordingName = Regex(
+        """^(screen[_ -]?record|record[_ -]?screen|screen[_ -]?rec[_ -]|svid_|screen-\d{8}|rec_?screen)"""
+    )
+    private val videoExtensions = setOf("mp4", "mkv", "webm", "3gp", "mov", "avi", "m4v", "ts")
 
-    private fun squash(s: String) = s.lowercase().replace(Regex("[^a-z0-9]"), "")
+    /** Lowercase, accents removed ("grabación" -> "grabacion"), only letters and digits kept. */
+    private fun squash(s: String) =
+        java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD)
+            .replace(Regex("[^a-z0-9]"), "")
 
     /**
      * @param name   file name, e.g. "IMG-20240512-WA0007.jpg"
      * @param path   folder path, e.g. "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/"
      * @param folder the folder's display name, e.g. "WhatsApp Images" (may be empty)
+     * @param isVideo whether it's a video; worked out from the file extension if not given
      */
-    fun categorize(name: String, path: String, folder: String): Category {
+    fun categorize(name: String, path: String, folder: String, isVideo: Boolean? = null): Category {
         val n = name.lowercase()
         val base = n.substringBeforeLast('.')     // name without ".jpg" / ".mp4"
+        val video = isVideo ?: (n.substringAfterLast('.', "") in videoExtensions)
         val sn = squash(base)
         val p = path.lowercase().replace('\\', '/')
         val sp = squash(p) + squash(folder)
 
+        // 0. Screen captures first, so a recording of TikTok ("Screen_Recording_..._TikTok.mp4")
+        //    is a screen recording, not a TikTok video. A *video* can never be a screenshot:
+        //    many phones save screen recordings in the Screenshots folder.
+        val recordingByName = screenRecordingName.containsMatchIn(n) ||
+            listOf("screenrecord", "recordscreen", "grabaciondepantalla").any { it in sn }
+        val recordingByFolder = listOf("screenrecord", "recordscreen", "grabaciondepantalla").any { it in sp }
+        val screenshotByName = n.startsWith("screenshot") || "capturadepantalla" in sn || "screencapture" in sn
+        val screenshotByFolder = listOf("screenshot", "capturadepantalla", "capturas", "screencapture").any { it in sp }
+        when {
+            recordingByName || recordingByFolder -> return SCREEN_RECORDINGS
+            screenshotByName || screenshotByFolder -> return if (video) SCREEN_RECORDINGS else SCREENSHOTS
+        }
+
         // 1. Clear patterns in the file name.
         when {
             whatsAppName.containsMatchIn(n) -> return WHATSAPP
-            screenRecordingName.containsMatchIn(n) -> return SCREEN_RECORDINGS
-            n.startsWith("screenshot") -> return SCREENSHOTS
             n.startsWith("received_") -> return MESSENGER
             n.startsWith("fb_img") || n.startsWith("fb_vid") -> return FACEBOOK
             n.startsWith("snapchat-") -> return SNAPCHAT
